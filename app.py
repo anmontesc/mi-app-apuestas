@@ -86,86 +86,65 @@ def predecir_marcador_poisson(l_goal_avg, v_goal_avg):
 
 def calcular_stats_avanzadas(df, local, visitante):
     PARTIDOS = 10
-    df['FTR'] = np.where(df['FTHG'] > df['FTAG'], 'H', np.where(df['FTAG'] > df['FTHG'], 'A', 'D'))
+    # Añadimos columna de resultado FTR si no existe
+    if 'FTR' not in df.columns:
+        df['FTR'] = np.where(df['FTHG'] > df['FTAG'], 'H', np.where(df['FTAG'] > df['FTHG'], 'A', 'D'))
     
+    # Calcular estadísticas específicas del enfrentamiento (V14 + Nuevas)
     stats = {}
+    
     for eq in [local, visitante]:
+        # Partidos recientes
         matches = df[(df['HomeTeam'] == eq) | (df['AwayTeam'] == eq)].tail(PARTIDOS)
+        
         if len(matches) < 5: return None
         
-        # Racha (Forma) últimos 5 partidos
+        # 1. Forma reciente (Últimos 5)
         last_5 = matches.tail(5)
         forma = "".join([get_form_string(r, eq) for _, r in last_5.iterrows()])
         
-        # Medias
-        goals_for = []
-        goals_ag = []
-        
-        for _, r in matches.iterrows():
-            if r['HomeTeam'] == eq:
-                goals_for.append(r['FTHG'])
-                goals_ag.append(r['FTAG'])
-            else:
-                goals_for.append(r['FTAG'])
-                goals_ag.append(r['FTHG'])
-                
-        # Datos básicos para el resto de lógica (simplificado para integración)
-        # Recalculamos métricas completas como en V14
-        # ... (Aquí iría la lógica completa V14, resumida para este ejemplo)
-        # Para Poisson usamos Media Goles A Favor (Ataque) y En Contra (Defensa)
-        
-        stats[eq] = {
-            'Forma': forma,
-            'Att_Strength': np.mean(goals_for),
-            'Def_Weakness': np.mean(goals_ag)
-        }
-    
-    # Cálculos V14 completos (reutilizados)
-    # Nota: Por brevedad, fusionamos lógica. En producción usarías la función completa V14.
-    # Aquí simulamos el retorno de stats completas + las nuevas
-    full_stats_v14 = calcular_stats_v14(df, local, visitante) # Llamada a lógica previa
-    if full_stats_v14:
-        full_stats_v14[local].update(stats[local])
-        full_stats_v14[visitante].update(stats[visitante])
-        return full_stats_v14
-    return None
-
-# Función auxiliar V14 (La que ya tenías, optimizada)
-def calcular_stats_v14(df, local, visitante):
-    # [PEGA AQUÍ EL CONTENIDO DE LA FUNCIÓN calcular_stats DE LA VERSIÓN 14]
-    # Por espacio en la respuesta, asumo que usas la lógica V14 para córners/tarjetas.
-    # A continuación pongo una versión simplificada funcional para que el código corra directo.
-    
-    stats = {}
-    for eq in [local, visitante]:
-        matches = df[(df['HomeTeam'] == eq) | (df['AwayTeam'] == eq)].tail(10)
-        if len(matches)<5: return None
-        
-        # Acumuladores básicos para demostración (usar V14 completa para precisión)
-        f_l, c_l, card_l, g_l, ga_l, sot_f, saves, btts_l, u25_l = [],[],[],[],[],[],[],[],[]
+        # 2. Métricas acumuladas (Estilo V14)
+        f_l, c_l, card_l, g_l, ga_l, sot_f, saves, btts_l, u25_l, g2h_l = [],[],[],[],[],[],[],[],[],[]
         
         for _, r in matches.iterrows():
             is_h = r['HomeTeam'] == eq
+            
+            # Datos básicos
             f_l.append(r['HF'] if is_h else r['AF'])
             c_l.append(r['HC'] if is_h else r['AC'])
             card_l.append((r['HY']+r['HR']) if is_h else (r['AY']+r['AR']))
+            
+            # Goles
             g = r['FTHG'] if is_h else r['FTAG']
             ga = r['FTAG'] if is_h else r['FTHG']
-            g_l.append(g); ga_l.append(ga)
+            g_l.append(g)
+            ga_l.append(ga)
+            
+            # Goles 2ª Parte
+            ht_g = r['HTHG'] if is_h else r['HTAG']
+            g2h_l.append(g - ht_g)
+            
+            # Tiros y Paradas
             sot = r['HST'] if is_h else r['AST']
             sot_a = r['AST'] if is_h else r['HST']
             sot_f.append(sot)
             saves.append(max(0, sot_a - ga))
+            
+            # Booleans
             btts_l.append(1 if (g>0 and ga>0) else 0)
             u25_l.append(1 if (g+ga)<2.5 else 0)
-            
+
+        # Empaquetar datos
+        n = len(matches)
         stats[eq] = {
+            'Forma': forma,
             'Fouls': np.mean(f_l), 'Corn': np.mean(c_l), 'Cards': np.mean(card_l),
             'Goals': np.mean(g_l), 'G_Conc': np.mean(ga_l), 'SOT_F': np.mean(sot_f),
             'Saves': np.mean(saves), 'BTTS': np.mean(btts_l), 'U25': np.mean(u25_l),
             'Prob_Card': np.mean([1 if c>0 else 0 for c in card_l]),
-            'G_2H': 0.5 # Simplificado para demo
+            'G_2H': np.mean(g2h_l)
         }
+        
     return stats
 
 # ==========================================
@@ -182,6 +161,7 @@ else:
         st.header("⚙️ Configuración")
         liga_sel = st.selectbox("Liga", sorted(ligas))
         df_liga = df_full[df_full['League'] == liga_sel]
+        
         equipos = sorted(df_liga['HomeTeam'].unique())
         local = st.selectbox("Local", equipos)
         vis_list = [x for x in equipos if x != local]
@@ -190,7 +170,9 @@ else:
         # Gestión Árbitro (Simplificada V14)
         has_ref = 'Referee' in df_liga.columns and df_liga['Referee'].nunique() > 1
         ref_avg = 4.0
+        
         if has_ref:
+            # Calcular medias reales de árbitros
             df_liga['TC'] = df_liga['HY']+df_liga['AY']+df_liga['HR']+df_liga['AR']
             refs = df_liga.groupby('Referee')['TC'].mean().to_dict()
             r_sel = st.selectbox("Árbitro", ["Desconocido"] + sorted(list(refs.keys())))
@@ -247,18 +229,29 @@ else:
             st.subheader("🧠 Estrategias de Valor")
             
             opciones = []
+            
             # Tarjetas
             cards_proj = l['Cards'] + v['Cards'] + (ref_avg - 4.0)
             if cards_proj >= 5.5: opciones.append(("🟥 TARJETAS", "Más de 4.5", 85, 1.70)) # Cuota aprox 1.70
+            elif cards_proj <= 3.5: opciones.append(("🕊️ TARJETAS", "Menos de 4.5", 65, 1.80))
+            if l['Prob_Card'] >= 0.85 and v['Prob_Card'] >= 0.85: opciones.append(("🟨 BTC", "Ambos Reciben", 90, 1.40))
             
             # Córners
             if (l['Corn']+v['Corn']) >= 10.5: opciones.append(("🚩 CÓRNERS", "Más de 9.5", 75, 1.83))
+            if l['Corn'] >= 6.5: opciones.append(("🚩 CÓRNERS LOCAL", "Local +5.5", 70, 1.90))
             
             # Porteros
             if v['SOT_F'] >= 5.0 and l['Saves'] >= 3.0: opciones.append(("🧤 PORTERO LOCAL", "+3.5 Paradas", 80, 1.65))
+            if l['SOT_F'] >= 5.0 and v['Saves'] >= 3.0: opciones.append(("🧤 PORTERO VISITA", "+3.5 Paradas", 80, 1.65))
             
             # Goles
+            sum_g2h = l['G_2H'] + v['G_2H']
+            if sum_g2h >= 1.5: opciones.append(("⏱️ GOL TARDÍO", "Gol en 2ª Parte", 80, 1.40))
             if l['BTTS'] >= 0.65 and v['BTTS'] >= 0.65: opciones.append(("⚽ BTTS", "Sí", 75, 1.75))
+            if l['U25'] >= 0.60 and v['U25'] >= 0.60: opciones.append(("🛡️ UNDER 2.5", "Menos de 2.5", 70, 1.90))
+            
+            # Tiros
+            if l['Fouls'] >= 11 and v['G_Conc'] <= 1.2: opciones.append(("🎯 TIROS", "Visitante +3.5 Tiros", 65, 1.85))
 
             if opciones:
                 for tit, desc, conf, cuota_ref in opciones:
@@ -266,7 +259,7 @@ else:
                     # Fórmula: (bp - q) / b  donde b = cuota-1, p = probabilidad, q = 1-p
                     p = conf / 100
                     b = cuota_ref - 1
-                    kelly_pct = ((b * p) - (1 - p)) / b
+                    kelly_pct = ((b * p) - (1 - p)) / b if b > 0 else 0
                     kelly_pct = max(0, kelly_pct * 0.5) # Kelly Fraccional (Conservador)
                     stake_eur = bankroll * kelly_pct
                     
