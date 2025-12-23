@@ -6,17 +6,19 @@ import os
 from scipy.stats import poisson
 
 # ==========================================
-# CONFIGURACIÓN VISUAL (MODO DARK/GOLD)
+# CONFIGURACIÓN KOMERCIAL BET ELITE V15.1
 # ==========================================
-st.set_page_config(page_title="Komercial Bet Elite", page_icon="💎", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Komercial Bet Elite", page_icon="💎", layout="wide")
 
 st.markdown("""
     <style>
     .main {background-color: #0e1117;}
-    h1 {color: #d4af37; font-family: 'Helvetica Neue', sans-serif;}
-    .stMetric {background-color: #1a1c24; border: 1px solid #333; border-radius: 8px;}
-    .success-box {padding: 15px; background-color: rgba(0, 255, 127, 0.1); border-left: 5px solid #00ff7f; border-radius: 5px; margin-bottom: 10px;}
-    .prediction-box {padding: 15px; background-color: rgba(212, 175, 55, 0.1); border: 1px solid #d4af37; border-radius: 8px; text-align: center;}
+    h1 {color: #d4af37; font-family: 'Helvetica Neue', sans-serif; text-align: center; margin-bottom: 0px;}
+    .stMetric {background-color: #1a1c24; border: 1px solid #333; border-radius: 8px; padding: 10px;}
+    .card {padding: 20px; border-radius: 10px; background-color: #1a1c24; border: 1px solid #d4af37; margin-bottom: 15px;}
+    .success-text {color: #00ff7f; font-weight: bold;}
+    .gold-text {color: #d4af37; font-weight: bold;}
+    .form-text {font-size: 18px; letter-spacing: 2px;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -27,11 +29,9 @@ st.markdown("""
 def cargar_datos():
     files = glob.glob("*.csv")
     if not files: return None, None, None
-    
     dfs = []
     cols = ['Date', 'HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'HST', 'AST', 'HF', 'AF', 
             'HC', 'AC', 'HS', 'AS', 'HY', 'AY', 'HR', 'AR', 'HTHG', 'HTAG', 'Referee']
-    
     for f in files:
         try:
             df_check = pd.read_csv(f, nrows=1)
@@ -43,239 +43,162 @@ def cargar_datos():
             else: df['League'] = "🌍 Otra"
             dfs.append(df)
         except: pass
-
     if not dfs: return None, None, None
-
     df = pd.concat(dfs, ignore_index=True)
     df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
     df = df.sort_values('Date').reset_index(drop=True).dropna(subset=['Date'])
-    
     return df, df['League'].unique()
 
 # ==========================================
-# 2. CÁLCULO DE FORMA Y POISSON
+# 2. CÁLCULOS ESTADÍSTICOS (ALGORITMOS FIJOS)
 # ==========================================
-def get_form_string(row, team):
-    # Devuelve W/D/L para un partido dado
-    if row['HomeTeam'] == team:
-        return '✅' if row['FTR'] == 'H' else ('❌' if row['FTR'] == 'A' else '➖')
-    else:
-        return '✅' if row['FTR'] == 'A' else ('❌' if row['FTR'] == 'H' else '➖')
-
-def predecir_marcador_poisson(l_goal_avg, v_goal_avg):
-    # Predice los marcadores más probables usando distribución de Poisson
-    max_goals = 6
-    probs = np.zeros((max_goals, max_goals))
-    
-    for i in range(max_goals):
-        for j in range(max_goals):
-            prob_home = poisson.pmf(i, l_goal_avg)
-            prob_away = poisson.pmf(j, v_goal_avg)
-            probs[i][j] = prob_home * prob_away
-            
-    # Obtener los 3 marcadores más probables
-    indices = np.unravel_index(np.argsort(probs, axis=None)[::-1], probs.shape)
-    top_scores = []
-    for k in range(3):
-        h_score = indices[0][k]
-        a_score = indices[1][k]
-        prob = probs[h_score][a_score]
-        top_scores.append((f"{h_score}-{a_score}", prob))
-        
-    return top_scores
-
-def calcular_stats_avanzadas(df, local, visitante):
-    PARTIDOS = 10
-    # Añadimos columna de resultado FTR si no existe
-    if 'FTR' not in df.columns:
-        df['FTR'] = np.where(df['FTHG'] > df['FTAG'], 'H', np.where(df['FTAG'] > df['FTHG'], 'A', 'D'))
-    
-    # Calcular estadísticas específicas del enfrentamiento (V14 + Nuevas)
+def calcular_metricas_completas(df, local, visitante):
     stats = {}
-    
     for eq in [local, visitante]:
-        # Partidos recientes
-        matches = df[(df['HomeTeam'] == eq) | (df['AwayTeam'] == eq)].tail(PARTIDOS)
-        
+        # Tomamos los últimos 10 partidos para tendencia, pero exigimos mínimo 5
+        matches = df[(df['HomeTeam'] == eq) | (df['AwayTeam'] == eq)].tail(10)
         if len(matches) < 5: return None
         
-        # 1. Forma reciente (Últimos 5)
-        last_5 = matches.tail(5)
-        forma = "".join([get_form_string(r, eq) for _, r in last_5.iterrows()])
-        
-        # 2. Métricas acumuladas (Estilo V14)
-        f_l, c_l, card_l, g_l, ga_l, sot_f, saves, btts_l, u25_l, g2h_l = [],[],[],[],[],[],[],[],[],[]
+        f_l, c_l, card_l, g_l, ga_l, sot_f, sot_a, btts_l, u25_l, g2h_l, card_0_l = [],[],[],[],[],[],[],[],[],[],[]
         
         for _, r in matches.iterrows():
             is_h = r['HomeTeam'] == eq
-            
-            # Datos básicos
             f_l.append(r['HF'] if is_h else r['AF'])
             c_l.append(r['HC'] if is_h else r['AC'])
-            card_l.append((r['HY']+r['HR']) if is_h else (r['AY']+r['AR']))
-            
-            # Goles
+            cards = (r['HY']+r['HR']) if is_h else (r['AY']+r['AR'])
+            card_l.append(cards)
+            card_0_l.append(1 if cards > 0 else 0)
             g = r['FTHG'] if is_h else r['FTAG']
             ga = r['FTAG'] if is_h else r['FTHG']
-            g_l.append(g)
-            ga_l.append(ga)
+            g_l.append(g); ga_l.append(ga)
+            sot_f.append(r['HST'] if is_h else r['AST'])
+            sot_a.append(r['AST'] if is_h else r['HST'])
+            g2h_l.append(g - (r['HTHG'] if is_h else r['HTAG']))
+            btts_list = 1 if (g > 0 and ga > 0) else 0
+            btts_l.append(btts_list)
+            u25_l.append(1 if (g + ga) < 2.5 else 0)
             
-            # Goles 2ª Parte
-            ht_g = r['HTHG'] if is_h else r['HTAG']
-            g2h_l.append(g - ht_g)
-            
-            # Tiros y Paradas
-            sot = r['HST'] if is_h else r['AST']
-            sot_a = r['AST'] if is_h else r['HST']
-            sot_f.append(sot)
-            saves.append(max(0, sot_a - ga))
-            
-            # Booleans
-            btts_l.append(1 if (g>0 and ga>0) else 0)
-            u25_l.append(1 if (g+ga)<2.5 else 0)
+        # Generar tira de forma (W/D/L)
+        last_5 = matches.tail(5)
+        forma = ""
+        for _, r in last_5.iterrows():
+            res = 'H' if r['FTHG']>r['FTAG'] else ('A' if r['FTAG']>r['FTHG'] else 'D')
+            if (r['HomeTeam']==eq and res=='H') or (r['AwayTeam']==eq and res=='A'): forma += "✅"
+            elif res=='D': forma += "➖"
+            else: forma += "❌"
 
-        # Empaquetar datos
-        n = len(matches)
         stats[eq] = {
-            'Forma': forma,
-            'Fouls': np.mean(f_l), 'Corn': np.mean(c_l), 'Cards': np.mean(card_l),
-            'Goals': np.mean(g_l), 'G_Conc': np.mean(ga_l), 'SOT_F': np.mean(sot_f),
-            'Saves': np.mean(saves), 'BTTS': np.mean(btts_l), 'U25': np.mean(u25_l),
-            'Prob_Card': np.mean([1 if c>0 else 0 for c in card_l]),
-            'G_2H': np.mean(g2h_l)
+            'Forma': forma, 'Fouls': np.mean(f_l), 'Corn': np.mean(c_l), 'Cards': np.mean(card_l),
+            'Goals': np.mean(g_l), 'G_Conc': np.mean(ga_l), 'SOT_F': np.mean(sot_f), 'SOT_A': np.mean(sot_a),
+            'BTTS': np.mean(btts_l), 'U25': np.mean(u25_l), 'G_2H': np.mean(g2h_l), 'Prob_Card': np.mean(card_0_l)
         }
-        
     return stats
 
+def predict_poisson(l_avg, v_avg):
+    probs = np.zeros((5, 5))
+    for i in range(5):
+        for j in range(5):
+            probs[i][j] = poisson.pmf(i, l_avg) * poisson.pmf(j, v_avg)
+    idx = np.unravel_index(np.argsort(probs, axis=None)[::-1], probs.shape)
+    return [(f"{idx[0][k]}-{idx[1][k]}", probs[idx[0][k]][idx[1][k]]) for k in range(3)]
+
 # ==========================================
-# 3. INTERFAZ ELITE
+# 3. INTERFAZ KOMERCIAL BET
 # ==========================================
-st.markdown("<h1>💎 KOMERCIAL BET <span style='color:#d4af37'>ELITE</span></h1>", unsafe_allow_html=True)
+st.markdown("<h1>💎 KOMERCIAL BET <span style='color:grey; font-size:18px'>ELITE V15.1</span></h1>", unsafe_allow_html=True)
 
 df_full, ligas = cargar_datos()
 
-if df_full is None:
-    st.error("⚠️ Sube los CSV a GitHub.")
-else:
+if df_full is not None:
     with st.sidebar:
         st.header("⚙️ Configuración")
         liga_sel = st.selectbox("Liga", sorted(ligas))
         df_liga = df_full[df_full['League'] == liga_sel]
-        
         equipos = sorted(df_liga['HomeTeam'].unique())
         local = st.selectbox("Local", equipos)
-        vis_list = [x for x in equipos if x != local]
-        visitante = st.selectbox("Visitante", vis_list)
+        visitante = st.selectbox("Visitante", [x for x in equipos if x != local])
         
-        # Gestión Árbitro (Simplificada V14)
-        has_ref = 'Referee' in df_liga.columns and df_liga['Referee'].nunique() > 1
-        ref_avg = 4.0
-        
-        if has_ref:
-            # Calcular medias reales de árbitros
+        # Gestión Árbitro
+        ref_avg = 4.5
+        if 'Referee' in df_liga.columns:
             df_liga['TC'] = df_liga['HY']+df_liga['AY']+df_liga['HR']+df_liga['AR']
             refs = df_liga.groupby('Referee')['TC'].mean().to_dict()
             r_sel = st.selectbox("Árbitro", ["Desconocido"] + sorted(list(refs.keys())))
             if r_sel != "Desconocido": ref_avg = refs[r_sel]
-        else:
-            ref_avg = st.number_input("Media Árbitro (Manual)", 0.0, 10.0, 4.5)
-            
-        st.markdown("---")
-        # CALCULADORA KELLY
-        st.subheader("💰 Gestión de Banca")
-        bankroll = st.number_input("Tu Banca Total (€)", 100, 100000, 1000)
+        else: ref_avg = st.number_input("Media Árbitro (Manual)", 0.0, 10.0, 4.5)
         
-        btn = st.button("🚀 ANALIZAR ELITE", type="primary", use_container_width=True)
+        bankroll = st.number_input("Banca (€)", 100, 100000, 1000)
+        btn = st.button("🚀 ANALIZAR PARTIDO", type="primary", use_container_width=True)
 
     if btn:
-        stats = calcular_stats_avanzadas(df_full, local, visitante)
-        
-        if stats:
-            l = stats[local]
-            v = stats[visitante]
+        s = calcular_metricas_completas(df_full, local, visitante)
+        if s:
+            l, v = s[local], s[visitante]
             
-            # --- CABECERA CON RACHAS ---
-            c1, c2, c3 = st.columns([1, 0.2, 1])
-            with c1: 
-                st.markdown(f"<h3 style='text-align:right'>{local}</h3>", unsafe_allow_html=True)
-                st.markdown(f"<div style='text-align:right; font-size:20px'>{l['Forma']}</div>", unsafe_allow_html=True)
-            with c2: st.markdown("<h2 style='text-align:center'>VS</h2>", unsafe_allow_html=True)
-            with c3: 
-                st.markdown(f"<h3 style='text-align:left'>{visitante}</h3>", unsafe_allow_html=True)
-                st.markdown(f"<div style='text-align:left; font-size:20px'>{v['Forma']}</div>", unsafe_allow_html=True)
+            # Rachas y Marcadores
+            st.markdown(f"<div style='display:flex; justify-content:space-around; align-items:center; margin-bottom:20px;'><div><h3 style='margin:0'>{local}</h3><p class='form-text'>{l['Forma']}</p></div><h2 style='color:#d4af37'>VS</h2><div><h3 style='margin:0'>{visitante}</h3><p class='form-text'>{v['Forma']}</p></div></div>", unsafe_allow_html=True)
+            
+            xg_h, xg_v = (l['Goals'] + v['G_Conc'])/2, (v['Goals'] + l['G_Conc'])/2
+            scores = predict_poisson(xg_h, xg_v)
+            cols = st.columns(3)
+            for i, (score, prob) in enumerate(scores):
+                cols[i].markdown(f"<div style='text-align:center; border:1px solid #d4af37; border-radius:10px; padding:10px;'><span style='font-size:22px; font-weight:bold;'>{score}</span><br><span style='color:grey;'>IA Prob: {prob*100:.1f}%</span></div>", unsafe_allow_html=True)
             
             st.markdown("---")
-
-            # --- 🔮 SIMULADOR POISSON ---
-            # Estimamos Goles Esperados (xG) simples
-            xg_home = (l['Goals'] + v['G_Conc']) / 2
-            xg_away = (v['Goals'] + l['G_Conc']) / 2
             
-            marcadores = predecir_marcador_poisson(xg_home, xg_away)
-            
-            st.subheader("🔮 Inteligencia Artificial: Marcador Exacto")
-            col_res = st.columns(3)
-            for i, (score, prob) in enumerate(marcadores):
-                with col_res[i]:
-                    st.markdown(f"""
-                    <div class="prediction-box">
-                        <div style="font-size: 24px; font-weight: bold;">{score}</div>
-                        <div style="color: grey;">Prob: {prob*100:.1f}%</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-            # --- ESTRATEGIAS (Lógica V14) ---
-            st.markdown("---")
-            st.subheader("🧠 Estrategias de Valor")
-            
+            # --- ALGORITMOS DE OPORTUNIDADES ---
             opciones = []
             
-            # Tarjetas
-            cards_proj = l['Cards'] + v['Cards'] + (ref_avg - 4.0)
-            if cards_proj >= 5.5: opciones.append(("🟥 TARJETAS", "Más de 4.5", 85, 1.70)) # Cuota aprox 1.70
-            elif cards_proj <= 3.5: opciones.append(("🕊️ TARJETAS", "Menos de 4.5", 65, 1.80))
-            if l['Prob_Card'] >= 0.85 and v['Prob_Card'] >= 0.85: opciones.append(("🟨 BTC", "Ambos Reciben", 90, 1.40))
+            # 1. TIROS A PUERTA (RESTAURADO Y FIJO)
+            # Si el local hace >= 10 faltas y el visitante encaja poco, el visitante dispara.
+            if l['Fouls'] >= 10.0 and v['G_Conc'] <= 1.4:
+                opciones.append(("🎯 TIROS VISITANTE", "Visitante +2.5 Tiros a Puerta", 78, 1.55))
             
-            # Córners
-            if (l['Corn']+v['Corn']) >= 10.5: opciones.append(("🚩 CÓRNERS", "Más de 9.5", 75, 1.83))
-            if l['Corn'] >= 6.5: opciones.append(("🚩 CÓRNERS LOCAL", "Local +5.5", 70, 1.90))
-            
-            # Porteros
-            if v['SOT_F'] >= 5.0 and l['Saves'] >= 3.0: opciones.append(("🧤 PORTERO LOCAL", "+3.5 Paradas", 80, 1.65))
-            if l['SOT_F'] >= 5.0 and v['Saves'] >= 3.0: opciones.append(("🧤 PORTERO VISITA", "+3.5 Paradas", 80, 1.65))
-            
-            # Goles
-            sum_g2h = l['G_2H'] + v['G_2H']
-            if sum_g2h >= 1.5: opciones.append(("⏱️ GOL TARDÍO", "Gol en 2ª Parte", 80, 1.40))
-            if l['BTTS'] >= 0.65 and v['BTTS'] >= 0.65: opciones.append(("⚽ BTTS", "Sí", 75, 1.75))
-            if l['U25'] >= 0.60 and v['U25'] >= 0.60: opciones.append(("🛡️ UNDER 2.5", "Menos de 2.5", 70, 1.90))
-            
-            # Tiros
-            if l['Fouls'] >= 11 and v['G_Conc'] <= 1.2: opciones.append(("🎯 TIROS", "Visitante +3.5 Tiros", 65, 1.85))
+            # 2. TARJETAS (LOGICA TRIPLE)
+            proj_cards = l['Cards'] + v['Cards'] + (ref_avg - 4.0)
+            if l['Prob_Card'] >= 0.85 and v['Prob_Card'] >= 0.85:
+                opciones.append(("🟨 AMBOS RECIBEN", "Sí (Ambos ven tarjeta)", 90, 1.45))
+            if proj_cards >= 3.8:
+                opciones.append(("🟥 LÍNEA DE TARJETAS", "Más de 3.5 Tarjetas", 85, 1.35))
+            if proj_cards >= 5.2:
+                opciones.append(("🔥 OVER TARJETAS", "Más de 4.5 Tarjetas (Partido Tenso)", 72, 1.90))
 
+            # 3. PORTEROS (PARADAS)
+            if l['SOT_F'] >= 5.2:
+                opciones.append(("🧤 PARADAS", f"Portero Visitante +3.5 Paradas (Recibe {l['SOT_F']:.1f} tiros)", 80, 1.60))
+
+            # 4. CÓRNERS
+            t_corn = l['Corn'] + v['Corn']
+            if t_corn >= 9.8:
+                opciones.append(("🚩 CÓRNERS TOTALES", "Más de 8.5 Córners", 82, 1.40))
+            if l['Corn'] >= 6.2:
+                opciones.append(("🚩 CÓRNERS LOCAL", "Más de 5.5 Córners Local", 70, 1.85))
+
+            # 5. GOLES (BTTS Y LATE GOAL)
+            sum_2h = l['G_2H'] + v['G_2H']
+            if sum_2h >= 1.4:
+                opciones.append(("⏱️ GOL TARDÍO", "Habrá gol en la 2ª Parte", 80, 1.35))
+            if l['BTTS'] >= 0.65 and v['BTTS'] >= 0.65:
+                opciones.append(("⚽ AMBOS MARCAN", "Sí (Tendencia goleadora)", 75, 1.70))
+
+            # RENDER DE OPORTUNIDADES
+            st.subheader("💡 Oportunidades de Inversión")
             if opciones:
-                for tit, desc, conf, cuota_ref in opciones:
-                    # CÁLCULO DE KELLY
-                    # Fórmula: (bp - q) / b  donde b = cuota-1, p = probabilidad, q = 1-p
-                    p = conf / 100
-                    b = cuota_ref - 1
-                    kelly_pct = ((b * p) - (1 - p)) / b if b > 0 else 0
-                    kelly_pct = max(0, kelly_pct * 0.5) # Kelly Fraccional (Conservador)
-                    stake_eur = bankroll * kelly_pct
+                for tit, desc, conf, cuota in opciones:
+                    p = conf/100
+                    b = cuota - 1
+                    kelly = max(0, ((b*p)-(1-p))/b * 0.5) if b>0 else 0
+                    stake = bankroll * kelly
                     
                     st.markdown(f"""
-                    <div class="success-box">
+                    <div class="card">
                         <div style="display:flex; justify-content:space-between">
-                            <strong>{tit} | {desc}</strong>
-                            <span>Fiabilidad: {conf}%</span>
+                            <span class="gold-text">{tit}</span>
+                            <span class="success-text">{conf}% Fiabilidad</span>
                         </div>
-                        <div style="margin-top:5px; font-size:14px; color:#d4af37">
-                            💰 Stake Recomendado: <strong>{stake_eur:.1f}€ ({kelly_pct*100:.1f}%)</strong>
-                        </div>
+                        <div style="font-size:18px; margin: 10px 0;">{desc}</div>
+                        <div style="color:#aaa; font-size:14px;">Inversión Sugerida: <b>{stake:.1f}€</b> ({kelly*100:.1f}% del bank)</div>
                     </div>
                     """, unsafe_allow_html=True)
             else:
-                st.info("💤 Partido muy ajustado. No hay valor claro.")
-
-        else:
-            st.error("Datos insuficientes para este partido.")
+                st.info("No se detectan señales con suficiente ventaja estadística.")
