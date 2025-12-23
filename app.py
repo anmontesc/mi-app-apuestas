@@ -20,12 +20,11 @@ st.markdown("""
 # ==========================================
 # 1. MOTOR DE DATOS (CONEXIÓN WEB)
 # ==========================================
-# ttl=3600 significa: "Mantén los datos 1 hora. Después, vuelve a descargarlos".
 @st.cache_data(ttl=3600) 
 def cargar_datos_web(deporte):
     dfs = []
     
-    # --- FUENTES DE DATOS EN VIVO ---
+    # URLS DATOS EN VIVO (Temporada 24/25)
     urls_futbol = {
         "🇪🇸 La Liga": "https://www.football-data.co.uk/mmz4281/2425/SP1.csv",
         "🇬🇧 Premier": "https://www.football-data.co.uk/mmz4281/2425/E0.csv",
@@ -33,11 +32,6 @@ def cargar_datos_web(deporte):
         "🇩🇪 Bundesliga": "https://www.football-data.co.uk/mmz4281/2425/D1.csv",
         "🇫🇷 Ligue 1": "https://www.football-data.co.uk/mmz4281/2425/F1.csv"
     }
-    
-    # URL de NBA (Repositorio público que suele actualizarse, si falla, usa manual)
-    # Nota: Los datos de NBA gratuitos y en vivo son difíciles. Este es un ejemplo.
-    # Si este link falla en el futuro, habrá que buscar otro o subir manual.
-    url_nba = "https://raw.githubusercontent.com/datasets/nba-games/master/data/nba-games.csv" 
 
     if deporte == "⚽ FÚTBOL":
         cols = ['Date', 'HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'HST', 'AST', 'HF', 'AF', 
@@ -50,26 +44,19 @@ def cargar_datos_web(deporte):
                 df['League'] = liga
                 dfs.append(df)
             except Exception as e:
-                # Si falla una liga, no rompemos el programa, solo avisamos en consola
                 print(f"Error cargando {liga}: {e}")
                 
     elif deporte == "🏀 NBA":
         try:
-            # Intentamos cargar NBA desde repositorio web
-            # Nota: Si no encuentras un CSV estable de la temporada 24/25, 
-            # esta parte es mejor seguir haciéndola manual subiendo 'NBA.csv'.
-            # Aquí dejo preparado el código para leer el archivo local si existe,
-            # o intentar web si tienes una URL válida.
-            try:
-                # Prioridad: Archivo local actualizado por ti (más fiable en NBA)
-                df = pd.read_csv("NBA.csv")
-                if 'PTS' in df.columns: # Adaptador
-                     df = df.rename(columns={'Visitor/Neutral': 'AwayTeam', 'Home/Neutral': 'HomeTeam', 'PTS': 'FTAG', 'PTS.1': 'FTHG'})
-                df['League'] = "🇺🇸 NBA"
-                dfs.append(df)
-            except:
-                st.warning("⚠️ No se encuentra NBA.csv y no hay URL estable configurada.")
-        except: pass
+            # Prioridad: Archivo local actualizado manual (Más seguro para NBA)
+            df = pd.read_csv("NBA.csv")
+            # Adaptador de nombres si viene de Basketball-Reference
+            if 'PTS' in df.columns: 
+                 df = df.rename(columns={'Visitor/Neutral': 'AwayTeam', 'Home/Neutral': 'HomeTeam', 'PTS': 'FTAG', 'PTS.1': 'FTHG'})
+            df['League'] = "🇺🇸 NBA"
+            dfs.append(df)
+        except:
+            pass
 
     if not dfs: return None, []
 
@@ -80,13 +67,13 @@ def cargar_datos_web(deporte):
     return df, df['League'].unique()
 
 # ==========================================
-# 2. CÁLCULOS (MOTOR V15.1)
+# 2. CÁLCULOS (MOTOR V17.1 CORREGIDO)
 # ==========================================
 def analizar_futbol(df, local, visitante, ref_avg):
     matches = df[(df['HomeTeam'] == local) | (df['AwayTeam'] == local)].tail(10)
     if len(matches) < 5: return None
     
-    # Recolector de datos
+    # --- RECOLECTOR LOCAL ---
     l_stats = {'Fouls':[], 'Goals':[], 'SOT_F':[], 'Corn':[], 'Cards':[], 'Prob_Card':[], 'BTTS':[], 'G_2H':[]}
     
     for _, r in matches.iterrows():
@@ -102,15 +89,17 @@ def analizar_futbol(df, local, visitante, ref_avg):
         l_stats['BTTS'].append(1 if g>0 and ga>0 else 0)
         l_stats['G_2H'].append(g - (r['HTHG'] if is_h else r['HTAG']))
 
-    # Medias Local
     ls = {k: np.mean(v) for k,v in l_stats.items()}
     
-    # Visitante (Solo necesitamos datos defensivos y clave)
+    # --- RECOLECTOR VISITANTE (CORREGIDO) ---
     matches_v = df[(df['HomeTeam'] == visitante) | (df['AwayTeam'] == visitante)].tail(10)
-    v_stats = {'G_Conc':[], 'Cards':[], 'Prob_Card':[], 'Corn':[], 'BTTS':[], 'G_2H':[]}
+    # AÑADIDO 'Goals' AQUÍ PARA EVITAR EL KEYERROR
+    v_stats = {'Goals': [], 'G_Conc':[], 'Cards':[], 'Prob_Card':[], 'Corn':[], 'BTTS':[], 'G_2H':[]}
+    
     for _, r in matches_v.iterrows():
         is_h = r['HomeTeam'] == visitante
         g, ga = (r['FTHG'], r['FTAG']) if is_h else (r['FTAG'], r['FTHG'])
+        v_stats['Goals'].append(g)   # <--- ESTA LÍNEA FALTABA
         v_stats['G_Conc'].append(ga)
         v_stats['Cards'].append((r['HY']+r['HR']) if is_h else (r['AY']+r['AR']))
         v_stats['Prob_Card'].append(1 if v_stats['Cards'][-1]>0 else 0)
@@ -120,20 +109,23 @@ def analizar_futbol(df, local, visitante, ref_avg):
     
     vs = {k: np.mean(v) for k,v in v_stats.items()}
     
-    # Oportunidades
+    # OPORTUNIDADES
     ops = []
+    # Tiros
     if ls['Fouls'] >= 10.0 and vs['G_Conc'] <= 1.5: ops.append(("🎯 TIROS VISITANTE", "+2.5 Tiros", 78, 1.55))
     
+    # Tarjetas
     proj = ls['Cards'] + vs['Cards'] + (ref_avg - 4.0)
     if ls['Prob_Card'] >= 0.85 and vs['Prob_Card'] >= 0.85: ops.append(("🟨 AMBOS TARJETA", "SÍ", 90, 1.45))
     if proj >= 5.0: ops.append(("🔥 OVER TARJETAS", "+4.5 Tarjetas", 75, 1.85))
+    
+    # Córners / Goles
     if (ls['Corn']+vs['Corn']) >= 9.5: ops.append(("🚩 CÓRNERS", "+8.5 Total", 80, 1.45))
     if (ls['G_2H']+vs['G_2H']) >= 1.4: ops.append(("⏱️ GOL TARDÍO", "Gol en 2ª Parte", 80, 1.40))
     
     return ls, vs, ops
 
 def analizar_nba(df, local, visitante):
-    # Lógica NBA simplificada para el ejemplo
     def get_stats(t):
         m = df[(df['HomeTeam'] == t) | (df['AwayTeam'] == t)].tail(10)
         if len(m)<5: return None
@@ -164,7 +156,7 @@ deporte = st.sidebar.selectbox("Deporte", ["⚽ FÚTBOL", "🏀 NBA"])
 df, ligas = cargar_datos_web(deporte)
 
 if df is None or df.empty:
-    st.error("❌ No se pudieron descargar datos. Verifica tu conexión o las fuentes.")
+    st.error(f"❌ No hay datos para {deporte}. (Para NBA sube 'NBA.csv' a GitHub).")
 else:
     if deporte == "⚽ FÚTBOL":
         liga = st.sidebar.selectbox("Liga", ligas)
@@ -173,7 +165,7 @@ else:
         l = st.sidebar.selectbox("Local", eqs)
         v = st.sidebar.selectbox("Visitante", [x for x in eqs if x!=l])
         
-        # Árbitro inteligente (Si la liga tiene datos)
+        # Árbitro inteligente
         ref_avg = 4.5
         if 'Referee' in df_liga.columns:
             df_liga['TC'] = df_liga['HY']+df_liga['AY']+df_liga['HR']+df_liga['AR']
@@ -191,6 +183,7 @@ else:
                 st.markdown(f"## {l} vs {v}")
                 c1, c2 = st.columns(2)
                 c1.metric("Goles Local", f"{ls['Goals']:.2f}")
+                # AHORA ESTO YA NO DARÁ ERROR PORQUE 'Goals' EXISTE EN VS
                 c2.metric("Goles Visita", f"{vs['Goals']:.2f}")
                 
                 st.markdown("---")
@@ -201,7 +194,6 @@ else:
                 else: st.info("Sin señales claras.")
 
     elif deporte == "🏀 NBA":
-        st.warning("⚠️ Nota: Asegúrate de tener 'NBA.csv' actualizado en GitHub o una URL válida.")
         eqs = sorted(df['HomeTeam'].unique())
         l = st.sidebar.selectbox("Home", eqs)
         v = st.sidebar.selectbox("Away", [x for x in eqs if x!=l])
