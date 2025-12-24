@@ -86,8 +86,11 @@ def get_nba_teams(): return teams.get_teams()
 
 @st.cache_data(ttl=3600)
 def get_nba_advanced_stats():
-    # Descarga estadísticas avanzadas de TODOS los equipos de una vez
-    stats = leaguedashteamstats.LeagueDashTeamStats(season='2024-25', measure_type_detailed_defense='Base').get_data_frames()[0]
+    # CAMBIO IMPORTANTE: measure_type_nullable='Advanced'
+    stats = leaguedashteamstats.LeagueDashTeamStats(
+        season='2024-25', 
+        measure_type_nullable='Advanced'
+    ).get_data_frames()[0]
     return stats
 
 @st.cache_data(ttl=3600)
@@ -305,3 +308,4 @@ elif modo == "🏀 NBA PROPS (Player Analysis)":
             with c3: st.markdown(f"<div class='prop-card'><div class='stat-label'>AST (L {data['lines']['AST']})</div><div class='stat-val'>{data['avgs']['AST']:.1f}</div><div>{draw_streak(data['hits_10']['AST'])}</div></div>", unsafe_allow_html=True)
             st.line_chart(data['L10'][['GAME_DATE','PTS','REB','AST']].iloc[::-1], x='GAME_DATE')
         else: st.warning("Sin datos recientes.")
+
