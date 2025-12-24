@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from scipy.stats import poisson
+import datetime
 
 # ==========================================
 # CONFIGURACIÓN VISUAL
@@ -23,99 +24,99 @@ st.markdown("""
     }
     .signal-title {color: #d4af37; font-weight: bold; font-size: 18px;}
     .signal-conf {float: right; color: #00ff7f; font-weight: bold;}
-    
-    /* Centrar imágenes */
-    div[data-testid="stImage"] > img {
-        display: block;
-        margin-left: auto;
-        margin-right: auto;
-    }
+    div[data-testid="stImage"] > img {display: block; margin-left: auto; margin-right: auto;}
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. BASE DE DATOS DE LOGOS (URLS)
+# 0. LOGOS
 # ==========================================
 def get_team_logo(team_name):
-    # Diccionario de Logos (Puedes añadir más buscando en Google "Team Name logo png url")
+    # Mapeo básico de nombres de Basketball-Reference a URLs
+    # Nota: Los nombres deben coincidir EXACTAMENTE con la web (Ej: "Boston Celtics")
     logos = {
-        # --- ESPAÑA ---
-        "Real Madrid": "https://upload.wikimedia.org/wikipedia/en/thumb/5/56/Real_Madrid_CF.svg/1200px-Real_Madrid_CF.svg.png",
-        "Barcelona": "https://upload.wikimedia.org/wikipedia/en/thumb/4/47/FC_Barcelona_%28crest%29.svg/1200px-FC_Barcelona_%28crest%29.svg.png",
-        "Atl. Madrid": "https://upload.wikimedia.org/wikipedia/en/thumb/f/f4/Atletico_Madrid_2017_logo.svg/1200px-Atletico_Madrid_2017_logo.svg.png",
-        "Betis": "https://upload.wikimedia.org/wikipedia/en/thumb/1/13/Real_betis_logo.svg/1200px-Real_betis_logo.svg.png",
-        "Sevilla": "https://upload.wikimedia.org/wikipedia/en/thumb/3/3b/Sevilla_FC_logo.svg/1200px-Sevilla_FC_logo.svg.png",
-        "Sociedad": "https://upload.wikimedia.org/wikipedia/en/thumb/f/f1/Real_Sociedad_logo.svg/1200px-Real_Sociedad_logo.svg.png",
-        "Villarreal": "https://upload.wikimedia.org/wikipedia/en/thumb/7/70/Villarreal_CF_logo.svg/1200px-Villarreal_CF_logo.svg.png",
-        "Valencia": "https://upload.wikimedia.org/wikipedia/en/thumb/c/ce/Valenciacf.svg/1200px-Valenciacf.svg.png",
-        "Ath Bilbao": "https://upload.wikimedia.org/wikipedia/en/thumb/9/98/Club_Athletic_Bilbao_logo.svg/1200px-Club_Athletic_Bilbao_logo.svg.png",
-        "Getafe": "https://upload.wikimedia.org/wikipedia/en/thumb/4/4c/Getafe_CF_logo.svg/1200px-Getafe_CF_logo.svg.png",
-        
-        # --- INGLATERRA ---
-        "Man City": "https://upload.wikimedia.org/wikipedia/en/thumb/e/eb/Manchester_City_FC_badge.svg/1200px-Manchester_City_FC_badge.svg.png",
-        "Arsenal": "https://upload.wikimedia.org/wikipedia/en/thumb/5/53/Arsenal_FC.svg/1200px-Arsenal_FC.svg.png",
-        "Liverpool": "https://upload.wikimedia.org/wikipedia/en/thumb/0/0c/Liverpool_FC.svg/1200px-Liverpool_FC.svg.png",
-        "Chelsea": "https://upload.wikimedia.org/wikipedia/en/thumb/c/cc/Chelsea_FC.svg/1200px-Chelsea_FC.svg.png",
-        "Man United": "https://upload.wikimedia.org/wikipedia/en/thumb/7/7a/Manchester_United_FC_crest.svg/1200px-Manchester_United_FC_crest.svg.png",
-        "Tottenham": "https://upload.wikimedia.org/wikipedia/en/thumb/b/b4/Tottenham_Hotspur.svg/1200px-Tottenham_Hotspur.svg.png",
-        
-        # --- ITALIA ---
-        "Inter": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/FC_Internazionale_Milano_2021.svg/1200px-FC_Internazionale_Milano_2021.svg.png",
-        "Milan": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d0/Logo_of_AC_Milan.svg/1200px-Logo_of_AC_Milan.svg.png",
-        "Juventus": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/Juventus_FC_2017_icon_%28black%29.svg/1200px-Juventus_FC_2017_icon_%28black%29.svg.png",
-        "Napoli": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2d/SSC_Neapel.svg/1200px-SSC_Neapel.svg.png",
-        
-        # --- NBA (Algunos ejemplos clave) ---
         "Boston Celtics": "https://upload.wikimedia.org/wikipedia/en/thumb/8/8f/Boston_Celtics.svg/1200px-Boston_Celtics.svg.png",
         "Los Angeles Lakers": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Los_Angeles_Lakers_logo.svg/1200px-Los_Angeles_Lakers_logo.svg.png",
         "Golden State Warriors": "https://upload.wikimedia.org/wikipedia/en/thumb/0/01/Golden_State_Warriors_logo.svg/1200px-Golden_State_Warriors_logo.svg.png",
-        "Chicago Bulls": "https://upload.wikimedia.org/wikipedia/en/thumb/6/67/Chicago_Bulls_logo.svg/1200px-Chicago_Bulls_logo.svg.png",
         "Miami Heat": "https://upload.wikimedia.org/wikipedia/en/thumb/f/fb/Miami_Heat_logo.svg/1200px-Miami_Heat_logo.svg.png",
-        "Dallas Mavericks": "https://upload.wikimedia.org/wikipedia/en/thumb/9/97/Dallas_Mavericks_logo18.svg/1200px-Dallas_Mavericks_logo18.svg.png"
+        "Chicago Bulls": "https://upload.wikimedia.org/wikipedia/en/thumb/6/67/Chicago_Bulls_logo.svg/1200px-Chicago_Bulls_logo.svg.png",
+        "Dallas Mavericks": "https://upload.wikimedia.org/wikipedia/en/thumb/9/97/Dallas_Mavericks_logo18.svg/1200px-Dallas_Mavericks_logo18.svg.png",
+        "Real Madrid": "https://upload.wikimedia.org/wikipedia/en/thumb/5/56/Real_Madrid_CF.svg/1200px-Real_Madrid_CF.svg.png",
+        "Barcelona": "https://upload.wikimedia.org/wikipedia/en/thumb/4/47/FC_Barcelona_%28crest%29.svg/1200px-FC_Barcelona_%28crest%29.svg.png"
     }
-    
-    # Escudo genérico si no encuentra el equipo
-    return logos.get(team_name, "https://cdn-icons-png.flaticon.com/512/1665/1665926.png") # Escudo gris
+    return logos.get(team_name, "https://cdn-icons-png.flaticon.com/512/1665/1665926.png")
 
 # ==========================================
-# 1. MOTOR DE DATOS MULTI-TEMPORADA
+# 1. MOTOR DE DATOS (SCRAPER INCLUIDO)
 # ==========================================
 @st.cache_data(ttl=3600) 
 def cargar_datos_web(deporte):
     dfs = []
-    temporadas = ['2324', '2425', '2526'] 
-    ligas_codes = {
-        "🇪🇸 La Liga": "SP1", "🇬🇧 Premier": "E0", "🇮🇹 Serie A": "I1", 
-        "🇩🇪 Bundesliga": "D1", "🇫🇷 Ligue 1": "F1"
-    }
-
+    
     if deporte == "⚽ FÚTBOL":
+        # ... (Código Fútbol igual que antes) ...
+        temporadas = ['2324', '2425', '2526'] 
+        ligas_codes = {"🇪🇸 La Liga": "SP1", "🇬🇧 Premier": "E0", "🇮🇹 Serie A": "I1", "🇩🇪 Bundesliga": "D1", "🇫🇷 Ligue 1": "F1"}
         base_url = "https://www.football-data.co.uk/mmz4281/"
-        cols = ['Date', 'HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'HST', 'AST', 'HF', 'AF', 
-                'HC', 'AC', 'HY', 'AY', 'HR', 'AR', 'HTHG', 'HTAG', 'Referee']
+        cols = ['Date', 'HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'HST', 'AST', 'HF', 'AF', 'HC', 'AC', 'HY', 'AY', 'HR', 'AR', 'HTHG', 'HTAG', 'Referee']
+        
         for season in temporadas:
             for nombre_liga, codigo in ligas_codes.items():
                 url = f"{base_url}{season}/{codigo}.csv"
                 try:
                     df = pd.read_csv(url, usecols=lambda c: c in cols)
                     df['League'] = nombre_liga
-                    df['Season'] = season
                     dfs.append(df)
                 except: continue
-                
+
     elif deporte == "🏀 NBA":
-        try:
-            df = pd.read_csv("NBA.csv")
-            if 'PTS' in df.columns: 
-                 df = df.rename(columns={'Visitor/Neutral': 'AwayTeam', 'Home/Neutral': 'HomeTeam', 'PTS': 'FTAG', 'PTS.1': 'FTHG'})
-            df['League'] = "🇺🇸 NBA"
-            dfs.append(df)
-        except: pass
+        # --- NBA SCRAPER BASKETBALL-REFERENCE ---
+        # Año actual para la URL (Si estamos en dic 2025, la temporada es 2026)
+        year = 2026 
+        months = ['october', 'november', 'december', 'january', 'february', 'march', 'april']
+        
+        for m in months:
+            url = f"https://www.basketball-reference.com/leagues/NBA_{year}_games-{m}.html"
+            try:
+                # Pandas lee las tablas HTML automáticamente
+                tables = pd.read_html(url)
+                if tables:
+                    df_m = tables[0]
+                    # Limpieza básica
+                    # Renombrar columnas para que coincidan con nuestro sistema
+                    # Visitor/Neutral -> AwayTeam, Home/Neutral -> HomeTeam, PTS -> FTAG/FTHG
+                    rename_map = {
+                        'Visitor/Neutral': 'AwayTeam',
+                        'Home/Neutral': 'HomeTeam',
+                        'PTS': 'FTAG',
+                        'PTS.1': 'FTHG',
+                        'Date': 'Date'
+                    }
+                    df_m = df_m.rename(columns=rename_map)
+                    
+                    # Filtramos solo columnas útiles y filas válidas (partidos jugados)
+                    if 'FTHG' in df_m.columns and 'FTAG' in df_m.columns:
+                        df_m = df_m.dropna(subset=['FTHG', 'FTAG']) # Solo partidos terminados
+                        df_m = df_m[['Date', 'HomeTeam', 'AwayTeam', 'FTHG', 'FTAG']]
+                        df_m['League'] = "🇺🇸 NBA"
+                        dfs.append(df_m)
+            except Exception as e:
+                # Si el mes aún no existe o falla la conexión, continuamos
+                continue
 
     if not dfs: return None, []
+
     df = pd.concat(dfs, ignore_index=True)
-    df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
+    
+    # Limpieza de fechas
+    if deporte == "🏀 NBA":
+        # Formato Basketball-Ref: "Tue, Oct 24, 2023"
+        df['Date'] = pd.to_datetime(df['Date'], format='mixed', errors='coerce')
+    else:
+        df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
+        
     df = df.sort_values('Date').reset_index(drop=True).dropna(subset=['Date'])
+    
     return df, df['League'].unique()
 
 # ==========================================
@@ -125,7 +126,7 @@ def analizar_futbol(df, local, visitante, ref_avg):
     matches = df[(df['HomeTeam'] == local) | (df['AwayTeam'] == local)].tail(10)
     if len(matches) < 5: return None
     
-    # --- DATOS LOCAL ---
+    # Recolectores
     l_stats = {'Fouls':[], 'Goals':[], 'SOT_F':[], 'Corn':[], 'Cards':[], 'Prob_Card':[], 'BTTS':[], 'G_2H':[]}
     for _, r in matches.iterrows():
         is_h = r['HomeTeam'] == local
@@ -141,7 +142,6 @@ def analizar_futbol(df, local, visitante, ref_avg):
         l_stats['G_2H'].append(g - (r['HTHG'] if is_h else r['HTAG']))
     ls = {k: np.mean(v) for k,v in l_stats.items()}
     
-    # --- DATOS VISITANTE ---
     matches_v = df[(df['HomeTeam'] == visitante) | (df['AwayTeam'] == visitante)].tail(10)
     v_stats = {'Goals': [], 'G_Conc':[], 'Cards':[], 'Prob_Card':[], 'Corn':[], 'BTTS':[], 'G_2H':[]}
     for _, r in matches_v.iterrows():
@@ -156,7 +156,6 @@ def analizar_futbol(df, local, visitante, ref_avg):
         v_stats['G_2H'].append(g - (r['HTHG'] if is_h else r['HTAG']))
     vs = {k: np.mean(v) for k,v in v_stats.items()}
     
-    # --- SEÑALES ---
     ops = []
     if ls['Fouls'] >= 10.0 and vs['G_Conc'] <= 1.5: ops.append(("🎯 TIROS VISITANTE", "+2.5 Tiros a Puerta", 78))
     proj = ls['Cards'] + vs['Cards'] + (ref_avg - 4.0)
@@ -178,26 +177,49 @@ def analizar_nba(df, local, visitante):
             if r['HomeTeam']==t: p=r['FTHG']; pa=r['FTAG']
             else: p=r['FTAG']; pa=r['FTHG']
             pts.append(p); pts_a.append(pa); tot.append(p+pa)
-        return {'PTS': np.mean(pts), 'DEF': np.mean(pts_a), 'TOT': np.mean(tot)}
+        # Forma simple (Puntos anotados - recibidos en los ultimos 5)
+        last_5 = m.tail(5)
+        diff = []
+        for _,r in last_5.iterrows():
+            if r['HomeTeam']==t: diff.append(r['FTHG'] - r['FTAG'])
+            else: diff.append(r['FTAG'] - r['FTHG'])
+            
+        return {'PTS': np.mean(pts), 'DEF': np.mean(pts_a), 'TOT': np.mean(tot), 'FORMA': np.mean(diff)}
+    
     l, v = get_stats(local), get_stats(visitante)
     if not l or not v: return None, None, None
+    
     ops = []
     pace = (l['TOT'] + v['TOT']) / 2
-    if pace > 230: ops.append(("🏀 OVER PUNTOS", f"+{int(pace)-6} Puntos", 80))
-    if l['DEF'] > 118: ops.append(("🎯 PUNTOS VISITA", "Over Puntos Equipo", 82))
+    
+    # 1. Over/Under Puntos
+    if pace > 235: ops.append(("🏀 OVER PUNTOS", f"+{int(pace)-5} (Ritmo Frenético)", 80))
+    elif pace < 210: ops.append(("🛡️ UNDER PUNTOS", f"-{int(pace)+5} (Ritmo Lento)", 75))
+    
+    # 2. Hándicap (Spread) - Aproximación
+    diff = l['FORMA'] - v['FORMA'] + 3 # +3 por factor cancha
+    if diff > 7: ops.append(("💪 LOCAL CUBRE", f"{local} gana fácil", 75))
+    elif diff < -5: ops.append(("💪 VISITANTE CUBRE", f"{visitante} compite/gana", 75))
+    
+    # 3. Props
+    if l['DEF'] > 120: ops.append(("🎯 PUNTOS VISITA", f"{visitante} Over Puntos Equipo", 85))
+    if v['DEF'] > 120: ops.append(("🎯 PUNTOS LOCAL", f"{local} Over Puntos Equipo", 85))
+    
     return l, v, ops
 
 # ==========================================
 # 3. INTERFAZ
 # ==========================================
 st.sidebar.title("💎 KOMERCIAL BET")
-st.sidebar.caption("v19.0 | Visual Engine")
+st.sidebar.caption("v20.0 | Live Scraper")
 deporte = st.sidebar.selectbox("Deporte", ["⚽ FÚTBOL", "🏀 NBA"])
 
-df, ligas = cargar_datos_web(deporte)
+with st.spinner(f'Analizando mercados en vivo ({deporte})...'):
+    df, ligas = cargar_datos_web(deporte)
 
 if df is None or df.empty:
-    st.error(f"❌ No hay datos para {deporte}.")
+    st.error(f"❌ No se han encontrado datos para {deporte}.")
+    if deporte == "🏀 NBA": st.info("Intenta subir un archivo 'NBA.csv' manual si el scraper falla.")
 else:
     if deporte == "⚽ FÚTBOL":
         liga = st.sidebar.selectbox("Liga", ligas)
@@ -219,39 +241,29 @@ else:
         if st.sidebar.button("ANALIZAR", type="primary"):
             ls, vs, ops = analizar_futbol(df, l, v, ref_avg)
             if ls:
-                # --- VISUALIZACIÓN FACE-TO-FACE ---
                 col_l, col_vs, col_v = st.columns([1, 0.5, 1])
                 with col_l:
-                    st.image(get_team_logo(l), width=120)
-                    st.markdown(f"<h3 style='text-align:center'>{l}</h3>", unsafe_allow_html=True)
-                    st.metric("Goles/P", f"{ls['Goals']:.2f}")
+                    st.image(get_team_logo(l), width=100)
+                    st.metric(l, f"{ls['Goals']:.2f} Goles")
                 with col_vs:
-                    st.markdown("<br><br><h1 style='text-align:center; color:#d4af37'>VS</h1>", unsafe_allow_html=True)
+                    st.markdown("<br><h1 style='text-align:center; color:#d4af37'>VS</h1>", unsafe_allow_html=True)
                 with col_v:
-                    st.image(get_team_logo(v), width=120)
-                    st.markdown(f"<h3 style='text-align:center'>{v}</h3>", unsafe_allow_html=True)
-                    st.metric("Goles/P", f"{vs['Goals']:.2f}")
+                    st.image(get_team_logo(v), width=100)
+                    st.metric(v, f"{vs['Goals']:.2f} Goles")
 
                 st.markdown("---")
                 
-                # KPIs Proyectados
+                # KPIs
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Goles Esperados", f"{(ls['Goals']+vs['Goals'])/2:.2f}")
                 c2.metric("Tarjetas Proy.", f"{(ls['Cards']+vs['Cards']+(ref_avg-4)):.1f}")
                 c3.metric("Córners Proy.", f"{(ls['Corn']+vs['Corn']):.1f}")
                 
-                st.markdown("### 📡 Señales Detectadas")
+                st.subheader("📡 Señales Detectadas")
                 if ops:
                     for t, d, c in ops:
-                        st.markdown(f"""
-                        <div class='card'>
-                            <span class='signal-title'>{t}</span>
-                            <span class='signal-conf'>{c}%</span>
-                            <div style='color:#ccc; margin-top:5px;'>{d}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                else: 
-                    st.info("El algoritmo no detecta ineficiencias claras.")
+                        st.markdown(f"<div class='card'><span class='signal-title'>{t}</span><span class='signal-conf'>{c}%</span><br>{d}</div>", unsafe_allow_html=True)
+                else: st.info("Sin señales claras.")
 
     elif deporte == "🏀 NBA":
         eqs = sorted(df['HomeTeam'].unique())
@@ -263,19 +275,17 @@ else:
             if ls:
                 col_l, col_vs, col_v = st.columns([1, 0.5, 1])
                 with col_l:
-                    st.image(get_team_logo(l), width=120)
-                    st.markdown(f"<h3 style='text-align:center'>{l}</h3>", unsafe_allow_html=True)
-                    st.metric("PTS/P", f"{ls['PTS']:.1f}")
+                    st.image(get_team_logo(l), width=100)
+                    st.metric(l, f"{ls['PTS']:.1f} PTS")
                 with col_vs:
-                    st.markdown("<br><br><h1 style='text-align:center; color:#ff5722'>VS</h1>", unsafe_allow_html=True)
+                    st.markdown("<br><h1 style='text-align:center; color:#ff5722'>VS</h1>", unsafe_allow_html=True)
                 with col_v:
-                    st.image(get_team_logo(v), width=120)
-                    st.markdown(f"<h3 style='text-align:center'>{v}</h3>", unsafe_allow_html=True)
-                    st.metric("PTS/P", f"{vs['PTS']:.1f}")
+                    st.image(get_team_logo(v), width=100)
+                    st.metric(v, f"{vs['PTS']:.1f} PTS")
                 
                 st.markdown("---")
                 st.subheader("📡 Señales NBA")
                 if ops:
                     for t, d, c in ops:
-                        st.markdown(f"""<div class='card'><span class='signal-title'>{t}</span><span class='signal-conf'>{c}%</span><br>{d}</div>""", unsafe_allow_html=True)
+                        st.markdown(f"<div class='card'><span class='signal-title'>{t}</span><span class='signal-conf'>{c}%</span><br>{d}</div>", unsafe_allow_html=True)
                 else: st.info("Sin señales claras.")
