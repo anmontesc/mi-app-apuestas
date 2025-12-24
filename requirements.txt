@@ -2,5 +2,4 @@ pandas
 numpy
 streamlit
 scipy
-lxml
-nba_api
+
