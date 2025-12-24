@@ -1,17 +1,11 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import datetime
-import time
-
-# Librerías NBA
-from nba_api.stats.static import teams
-from nba_api.stats.endpoints import leaguedashteamstats, commonteamroster, playergamelog
 
 # ==========================================
 # CONFIGURACIÓN VISUAL
 # ==========================================
-st.set_page_config(page_title="Komercial Bet: Robust", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Komercial Bet: Pro Local", page_icon="📂", layout="wide")
 
 st.markdown("""
     <style>
@@ -30,14 +24,28 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. LOGOS
+# 0. LOGOS (URLS Fijas)
 # ==========================================
 def get_team_logo(team_name):
-    # Logos básicos para demo
-    return "https://cdn-icons-png.flaticon.com/512/1665/1665926.png"
+    # Diccionario ampliado de logos
+    logos = {
+        "Real Madrid": "https://upload.wikimedia.org/wikipedia/en/thumb/5/56/Real_Madrid_CF.svg/1200px-Real_Madrid_CF.svg.png",
+        "Barcelona": "https://upload.wikimedia.org/wikipedia/en/thumb/4/47/FC_Barcelona_%28crest%29.svg/1200px-FC_Barcelona_%28crest%29.svg.png",
+        "Atl. Madrid": "https://upload.wikimedia.org/wikipedia/en/thumb/f/f4/Atletico_Madrid_2017_logo.svg/1200px-Atletico_Madrid_2017_logo.svg.png",
+        "Betis": "https://upload.wikimedia.org/wikipedia/en/thumb/1/13/Real_betis_logo.svg/1200px-Real_betis_logo.svg.png",
+        "Man City": "https://upload.wikimedia.org/wikipedia/en/thumb/e/eb/Manchester_City_FC_badge.svg/1200px-Manchester_City_FC_badge.svg.png",
+        "Arsenal": "https://upload.wikimedia.org/wikipedia/en/thumb/5/53/Arsenal_FC.svg/1200px-Arsenal_FC.svg.png",
+        "Liverpool": "https://upload.wikimedia.org/wikipedia/en/thumb/0/0c/Liverpool_FC.svg/1200px-Liverpool_FC.svg.png",
+        "Boston Celtics": "https://upload.wikimedia.org/wikipedia/en/thumb/8/8f/Boston_Celtics.svg/1200px-Boston_Celtics.svg.png",
+        "Los Angeles Lakers": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Los_Angeles_Lakers_logo.svg/1200px-Los_Angeles_Lakers_logo.svg.png",
+        "Golden State Warriors": "https://upload.wikimedia.org/wikipedia/en/thumb/0/01/Golden_State_Warriors_logo.svg/1200px-Golden_State_Warriors_logo.svg.png",
+        "Miami Heat": "https://upload.wikimedia.org/wikipedia/en/thumb/f/fb/Miami_Heat_logo.svg/1200px-Miami_Heat_logo.svg.png",
+        "Chicago Bulls": "https://upload.wikimedia.org/wikipedia/en/thumb/6/67/Chicago_Bulls_logo.svg/1200px-Chicago_Bulls_logo.svg.png"
+    }
+    return logos.get(team_name, "https://cdn-icons-png.flaticon.com/512/1665/1665926.png")
 
 # ==========================================
-# 1. MOTOR DE DATOS FÚTBOL
+# 1. MOTOR DE DATOS FÚTBOL (Web CSVs)
 # ==========================================
 @st.cache_data(ttl=3600) 
 def cargar_datos_futbol():
@@ -46,92 +54,101 @@ def cargar_datos_futbol():
     ligas_codes = {"🇪🇸 La Liga": "SP1", "🇬🇧 Premier": "E0", "🇮🇹 Serie A": "I1"}
     base_url = "https://www.football-data.co.uk/mmz4281/"
     cols = ['Date', 'HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'HST', 'AST', 'HF', 'AF', 'HC', 'AC', 'HY', 'AY', 'HR', 'AR', 'HTHG', 'HTAG', 'Referee']
+    
     for season in temporadas:
         for nombre_liga, codigo in ligas_codes.items():
             try:
+                # Lectura directa de URL
                 df = pd.read_csv(f"{base_url}{season}/{codigo}.csv", usecols=lambda c: c in cols)
                 df['League'] = nombre_liga
                 dfs.append(df)
             except: continue
+            
     if not dfs: return None, []
     df = pd.concat(dfs, ignore_index=True)
     df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
     return df.sort_values('Date').reset_index(drop=True), df['League'].unique()
 
 # ==========================================
-# 2. MOTOR NBA (CON MODO RESCATE)
+# 2. MOTOR DE DATOS NBA (CSV Local)
 # ==========================================
-@st.cache_data(ttl=86400)
-def get_nba_teams(): return teams.get_teams()
-
-@st.cache_data(ttl=3600)
-def get_nba_stats_robust():
-    # Intento 1: API Online
+@st.cache_data
+def cargar_datos_nba_local():
     try:
-        # Headers para intentar engañar al servidor
-        headers = {'User-Agent': 'Mozilla/5.0'} 
-        stats = leaguedashteamstats.LeagueDashTeamStats(season='2024-25', measure_type_nullable='Base', timeout=5, headers=headers).get_data_frames()[0]
-        return stats, "API"
+        # Cargamos el archivo que has subido: nba_stats.csv
+        df = pd.read_csv("nba_stats.csv")
+        
+        # Limpieza básica por si acaso
+        if 'Team' in df.columns:
+            # Eliminamos filas vacías o de separadores
+            df = df.dropna(subset=['Team'])
+            # Filtramos solo equipos reales (eliminando filas de 'League Average' si las hay)
+            df = df[df['Team'] != 'League Average']
+            return df
+        else:
+            return None
     except:
-        return None, "ERROR"
+        return None
 
-def analizar_partido_nba(home_name, away_name, df_stats, source_type):
-    # Adaptador de columnas según si viene de API o CSV Manual
-    if source_type == "MANUAL":
-        # Mapeo de nombres manuales a nombres del código
-        # Asumimos que el CSV manual tiene columnas estándar
-        try:
-            h_stats = df_stats[df_stats['Team'] == home_name].iloc[0]
-            a_stats = df_stats[df_stats['Team'] == away_name].iloc[0]
-            
-            # Extraer datos (Adaptar nombres de columnas de Basketball-Ref)
-            pace_h = float(h_stats.get('Pace', 99))
-            pace_a = float(a_stats.get('Pace', 99))
-            # Net Rating aprox (SRS o NRtg)
-            net_h = float(h_stats.get('NRtg', h_stats.get('SRS', 0)))
-            net_a = float(a_stats.get('NRtg', a_stats.get('SRS', 0)))
-            win_h = float(h_stats.get('W/L%', 0.5))
-            win_a = float(a_stats.get('W/L%', 0.5))
-        except:
-            return None, None, []
-            
-    else: # VIENE DE LA API
-        h_stats = df_stats[df_stats['TEAM_NAME'] == home_name].iloc[0]
-        a_stats = df_stats[df_stats['TEAM_NAME'] == away_name].iloc[0]
-        # Cálculo manual de métricas si es API Base
-        pace_h = (h_stats['PTS'] + h_stats['OPP_PTS']) / 2 # Estimación Pace
-        pace_a = (a_stats['PTS'] + a_stats['OPP_PTS']) / 2
-        net_h = h_stats['PLUS_MINUS']
-        net_a = a_stats['PLUS_MINUS']
-        win_h = h_stats['W_PCT']
-        win_a = a_stats['W_PCT']
+def analizar_partido_nba(home_name, away_name, df_nba):
+    # Buscamos las filas de los equipos
+    try:
+        h_stats = df_nba[df_nba['Team'] == home_name].iloc[0]
+        a_stats = df_nba[df_nba['Team'] == away_name].iloc[0]
+    except:
+        return None, None, []
 
-    # --- ALGORITMO SHARP ---
     ops = []
     
-    # 1. Pace
-    game_pace = (pace_h + pace_a) / 2
-    if game_pace > 230 or game_pace < 90: # Ajuste de escala
-        pass # Normalizar si es necesario
+    # --- MÉTRICAS DE EFICIENCIA (SHARP) ---
+    # ORtg: Puntos anotados por 100 posesiones (Ataque)
+    # DRtg: Puntos recibidos por 100 posesiones (Defensa)
+    # NRtg: Diferencia neta (Lo bueno que es el equipo en general)
     
-    # Lógica simplificada robusta
-    if game_pace > 100.5: ops.append(("🏀 OVER PUNTOS", f"Ritmo Alto ({game_pace:.1f})", 80))
-    elif game_pace < 97.0: ops.append(("🛡️ UNDER PUNTOS", f"Ritmo Lento ({game_pace:.1f})", 75))
+    h_ortg = float(h_stats['ORtg'])
+    h_drtg = float(h_stats['DRtg'])
+    h_nrtg = float(h_stats['NRtg'])
     
-    # 2. Net Rating
-    diff = (net_h + 3.0) - net_a
-    if diff > 6.0: ops.append(("💪 VICTORIA LOCAL", f"Ventaja clara (+{diff:.1f})", 85))
-    elif diff < -4.0: ops.append(("💪 VICTORIA VISITA", f"Visitante superior (+{abs(diff):.1f})", 75))
+    a_ortg = float(a_stats['ORtg'])
+    a_drtg = float(a_stats['DRtg'])
+    a_nrtg = float(a_stats['NRtg'])
+    
+    # 1. GANADOR (NET RATING)
+    # Ajuste de campo: Se suele dar +3.0 puntos de ventaja al local en el Net Rating
+    diff_net = (h_nrtg + 3.0) - a_nrtg
+    
+    if diff_net > 8.0:
+        ops.append(("💪 VICTORIA LOCAL", f"{home_name} es muy superior (+{diff_net:.1f} NetRtg)", 85))
+    elif diff_net < -5.0:
+        ops.append(("💪 VICTORIA VISITA", f"{away_name} es superior (+{abs(diff_net):.1f} NetRtg)", 80))
+    elif abs(diff_net) < 2.0:
+        ops.append(("⚖️ PARTIDO CERRADO", "Final apretado (Clutch Time)", 60))
 
-    return {'PACE': pace_h, 'W': win_h}, {'PACE': pace_a, 'W': win_a}, ops
+    # 2. ESPECTÁCULO (OFENSIVA vs DEFENSA)
+    # Si el Ataque Local es mucho mejor que la Defensa Visitante -> Puntos Local
+    if h_ortg > (a_drtg + 5.0):
+        ops.append(("🔥 ATAQUE LOCAL", f"{home_name} anotará con facilidad", 75))
+    
+    if a_ortg > (h_drtg + 5.0):
+        ops.append(("🔥 ATAQUE VISITA", f"{away_name} anotará con facilidad", 75))
+
+    # 3. OVER / UNDER (ESTIMACIÓN POR EFICIENCIA)
+    # Si ambos tienen ataques eficientes (ORtg > 116) y defensas flojas (DRtg > 115)
+    if h_ortg > 116 and a_ortg > 116:
+        ops.append(("🏀 ALTA PUNTUACIÓN", "Duelo de ataques eficientes", 75))
+    elif h_drtg < 110 and a_drtg < 110:
+        ops.append(("🛡️ BAJA PUNTUACIÓN", "Duelo defensivo (Roca)", 70))
+
+    return h_stats, a_stats, ops
 
 # ==========================================
-# 3. MOTOR FÚTBOL
+# 3. MOTOR FÚTBOL (Lógica V20)
 # ==========================================
 def analizar_futbol(df, local, visitante, ref_avg):
     matches = df[(df['HomeTeam'] == local) | (df['AwayTeam'] == local)].tail(10)
     if len(matches) < 5: return None
     
+    # Recolector Stats
     l_stats = {'Fouls':[], 'Goals':[], 'Corn':[], 'Cards':[], 'Prob_Card':[], 'BTTS':[], 'G_2H':[]}
     for _, r in matches.iterrows():
         is_h = r['HomeTeam'] == local
@@ -174,11 +191,11 @@ def analizar_futbol(df, local, visitante, ref_avg):
 # 4. INTERFAZ UNIFICADA
 # ==========================================
 st.sidebar.title("💎 KOMERCIAL BET")
-st.sidebar.caption("v24.0 | Fallback Engine")
-modo = st.sidebar.selectbox("Modo", ["⚽ FÚTBOL", "🏀 NBA TEAMS"])
+st.sidebar.caption("v25.0 | Local Data Engine")
+modo = st.sidebar.selectbox("Deporte", ["⚽ FÚTBOL", "🏀 NBA TEAMS"])
 
 if modo == "⚽ FÚTBOL":
-    with st.spinner("Cargando DB Fútbol..."):
+    with st.spinner("Cargando datos históricos..."):
         df, ligas = cargar_datos_futbol()
     if df is not None:
         liga = st.sidebar.selectbox("Liga", ligas)
@@ -187,12 +204,19 @@ if modo == "⚽ FÚTBOL":
         l = st.sidebar.selectbox("Local", eqs)
         v = st.sidebar.selectbox("Visitante", [x for x in eqs if x!=l])
         ref_avg = st.sidebar.number_input("Media Árbitro", 0.0, 10.0, 4.5)
+        
         if st.sidebar.button("ANALIZAR FÚTBOL", type="primary"):
             ls, vs, ops = analizar_futbol(df, l, v, ref_avg)
             if ls:
-                c1,c2 = st.columns(2)
-                c1.metric(l, f"{ls['Goals']:.2f} Goles")
-                c2.metric(v, f"{vs['Goals']:.2f} Goles")
+                col_l, col_vs, col_v = st.columns([1, 0.5, 1])
+                with col_l:
+                    st.image(get_team_logo(l), width=100)
+                    st.metric(l, f"{ls['Goals']:.2f} Goles")
+                with col_vs:
+                    st.markdown("<br><h1 style='text-align:center; color:#d4af37'>VS</h1>", unsafe_allow_html=True)
+                with col_v:
+                    st.image(get_team_logo(v), width=100)
+                    st.metric(v, f"{vs['Goals']:.2f} Goles")
                 st.markdown("---")
                 if ops:
                     for t, d, c in ops:
@@ -200,53 +224,33 @@ if modo == "⚽ FÚTBOL":
                 else: st.info("Sin señales claras.")
 
 elif modo == "🏀 NBA TEAMS":
-    st.markdown("### 🏀 Análisis NBA")
+    df_nba = cargar_datos_nba_local()
     
-    # 1. INTENTAR API
-    df_nba, status = get_nba_stats_robust()
-    
-    # 2. SI FALLA LA API, PEDIR ARCHIVO
-    if status == "ERROR":
-        st.error("⚠️ La API de la NBA ha bloqueado la conexión (IP Ban).")
-        st.info("📂 **SOLUCIÓN:** Sube el archivo de estadísticas manualmente.")
-        st.markdown("[📥 Descargar Stats CSV aquí](https://www.basketball-reference.com/leagues/NBA_2025_ratings.html) (Dale a 'Share & Export' > 'Get as CSV')")
-        
-        uploaded_file = st.file_uploader("Sube el CSV aquí", type=["csv"])
-        
-        if uploaded_file:
-            try:
-                # Leer CSV Manual (Basketball Reference format)
-                # Saltamos la primera fila que suele ser cabecera doble
-                df_nba = pd.read_csv(uploaded_file, skiprows=1)
-                status = "MANUAL"
-                st.success("✅ Archivo cargado correctamente.")
-            except:
-                st.error("Formato de archivo incorrecto.")
-    
-    # 3. SI TENEMOS DATOS (SEA API O MANUAL)
     if df_nba is not None:
-        # Selector de equipos
-        if status == "API":
-            teams_list = sorted(df_nba['TEAM_NAME'].unique())
-        else: # Manual
-            teams_list = sorted(df_nba['Team'].unique())
-            
+        st.success("✅ Base de datos NBA cargada (Local)")
+        teams_list = sorted(df_nba['Team'].unique())
         l = st.sidebar.selectbox("Local", teams_list)
         v = st.sidebar.selectbox("Visitante", [x for x in teams_list if x!=l])
         
         if st.sidebar.button("ANALIZAR NBA", type="primary"):
-            h_s, a_s, ops = analizar_partido_nba(l, v, df_nba, status)
+            h_s, a_s, ops = analizar_partido_nba(l, v, df_nba)
             
-            if h_s:
+            if h_s is not None:
                 st.markdown(f"<h2 style='text-align:center'>{l} vs {v}</h2>", unsafe_allow_html=True)
-                c1, c2 = st.columns(2)
-                c1.metric("Pace (Ritmo)", f"{h_s['PACE']:.1f}")
-                c2.metric("Victorias %", f"{h_s['W']:.1%}")
+                
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Net Rating", f"{h_s['NRtg']}", delta=f"{h_s['NRtg'] - a_s['NRtg']:.1f}")
+                c2.metric("Ofensiva (ORtg)", f"{h_s['ORtg']}", f"Vs {a_s['ORtg']}")
+                c3.metric("Victorias %", f"{h_s['W/L%']}", f"Vs {a_s['W/L%']}")
                 
                 st.markdown("---")
+                st.subheader("🧠 Análisis Algorítmico (Sharp)")
                 if ops:
                     for t, d, c in ops:
                         st.markdown(f"<div class='game-card'><span style='color:#ff5722; font-weight:bold'>{t}</span><br>{d}</div>", unsafe_allow_html=True)
-                else: st.info("Partido equilibrado.")
+                else: st.info("Partido muy equilibrado.")
             else:
-                st.error("Error al procesar los datos del equipo.")
+                st.error("Error leyendo datos del equipo.")
+    else:
+        st.error("❌ No se encuentra 'nba_stats.csv' en la carpeta.")
+        st.info("Asegúrate de subir el archivo CSV a GitHub con ese nombre exacto.")
