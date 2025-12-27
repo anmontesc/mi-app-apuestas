@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import requests
+from io import StringIO
 from scipy.stats import poisson
 import difflib # Para encontrar nombres de equipos parecidos
 
@@ -71,24 +73,38 @@ def cargar_db_historica():
 # ==========================================
 # 2. MOTOR DE PARTIDOS DE HOY (Live Scraper)
 # ==========================================
+import requests
+from io import StringIO
+
 @st.cache_data(ttl=1800) # Se actualiza cada 30 mins
 def cargar_partidos_hoy():
     try:
-        # Usamos FBref para sacar los partidos del día (Es muy fiable)
         url = "https://fbref.com/en/matches/"
-        tables = pd.read_html(url)
         
-        # FBref suele poner todos los partidos en la primera tabla
-        df_hoy = tables[0]
+        # 1. HACEMOS LA PETICIÓN DISFRAZADA DE NAVEGADOR
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers)
         
-        # Limpieza básica
-        # Filtramos columnas necesarias: Hora, Local, Visitante, Competición
-        if 'Home' in df_hoy.columns and 'Away' in df_hoy.columns:
-            df_hoy = df_hoy[['Time', 'Home', 'Away', 'Competition', 'Round']]
-            df_hoy = df_hoy.dropna(subset=['Home', 'Away'])
-            return df_hoy
-    except:
+        # Si la web nos da el OK (Código 200)
+        if response.status_code == 200:
+            # Leemos el HTML de la respuesta, no de la URL directa
+            tables = pd.read_html(StringIO(response.text))
+            
+            # FBref suele poner los partidos en la primera tabla
+            df_hoy = tables[0]
+            
+            # Limpieza básica
+            if 'Home' in df_hoy.columns and 'Away' in df_hoy.columns:
+                df_hoy = df_hoy[['Time', 'Home', 'Away', 'Competition', 'Round']]
+                df_hoy = df_hoy.dropna(subset=['Home', 'Away'])
+                return df_hoy
+    except Exception as e:
+        # Imprimimos el error en la consola negra para que veas qué pasa
+        print(f"Error descargando partidos: {e}")
         return None
+    return None
 
 # ==========================================
 # 3. TRADUCTOR DE EQUIPOS (Fuzzy Logic)
@@ -263,3 +279,4 @@ else:
         st.error(f"⚠️ No pude encontrar datos históricos suficientes para **{home_live}** o **{away_live}**.")
         st.info(f"Posiblemente sean equipos de una liga menor que no está en nuestra base de datos Premium (Big 5).")
         st.write(f"Nombre intentado buscar en DB: {h_db} vs {a_db}")
+
