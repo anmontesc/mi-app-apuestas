@@ -153,3 +153,89 @@ if df_live is not None and not df_live.empty and st.session_state.partido_selecc
 
 # CASO 2: NO tenemos datos en vivo O el usuario eligió Manual -> Mostramos Selectores
 elif df_live is None or df_live.empty or st.session_state.partido_seleccionado == "MANUAL_MODE":
+    if df_live is None or df_live.empty:
+        st.sidebar.warning("📡 Señal en Vivo: CAÍDA (Usando Manual)")
+    else:
+        st.sidebar.info("Modo: Selección Manual")
+        
+    st.markdown("## 🎛️ Centro de Análisis Manual")
+    
+    if df_db is not None:
+        c1, c2, c3 = st.columns(3)
+        with c1: liga_sel = st.selectbox("Liga", ligas_db)
+        df_liga = df_db[df_db['League'] == liga_sel]
+        eqs = sorted(df_liga['HomeTeam'].unique())
+        with c2: l_sel = st.selectbox("Local", eqs)
+        with c3: v_sel = st.selectbox("Visitante", [x for x in eqs if x!=l_sel])
+        
+        if st.button("ANALIZAR PARTIDO", type="primary"):
+            st.session_state.partido_seleccionado = {'home': l_sel, 'away': v_sel, 'manual': True}
+            st.rerun()
+            
+    if st.session_state.partido_seleccionado == "MANUAL_MODE":
+        pass # Se queda esperando selección
+    else:
+        # Volver al inicio
+        if st.button("⬅️ Intentar reconectar Live"):
+            st.session_state.partido_seleccionado = None
+            st.rerun()
+
+# CASO 3: Hay un partido seleccionado (Sea del Live o del Manual) -> ANALIZAMOS
+if isinstance(st.session_state.partido_seleccionado, dict):
+    sel = st.session_state.partido_seleccionado
+    
+    # Botón de retorno
+    if st.button("⬅️ VOLVER"):
+        st.session_state.partido_seleccionado = None if sel.get('manual') else None
+        if sel.get('manual'): st.session_state.partido_seleccionado = "MANUAL_MODE"
+        st.rerun()
+
+    # Análisis
+    h_name = sel['home']
+    a_name = sel['away']
+    
+    # Buscamos en DB (Si viene de Manual es directo, si viene de Live traducimos)
+    equipos_db = df_db['HomeTeam'].unique()
+    h_db = h_name if sel.get('manual') else encontrar_equipo_db(h_name, equipos_db)
+    a_db = a_name if sel.get('manual') else encontrar_equipo_db(a_name, equipos_db)
+    
+    if h_db and a_db:
+        # CÁLCULOS CIENTÍFICOS V28
+        gap_h = calcular_gap_rating(df_db, h_db)
+        gap_a = calcular_gap_rating(df_db, a_db)
+        l_h = gap_h * 0.45; l_a = gap_a * 0.35
+        p_w, p_d, p_l = predecir_poisson(l_h, l_a)
+        
+        # VISUALIZACIÓN
+        st.markdown(f"<h1 style='text-align:center'>{h_db} <span style='color:#666'>vs</span> {a_db}</h1>", unsafe_allow_html=True)
+        
+        c1, c2 = st.columns(2)
+        c1.metric(f"GAP {h_db}", f"{gap_h:.2f}")
+        c2.metric(f"GAP {a_db}", f"{gap_a:.2f}")
+        
+        st.markdown("### 🧪 Laboratorio de Probabilidad")
+        c_prob, c_kelly = st.columns(2)
+        
+        with c_prob:
+            st.markdown(f"""
+            <div class='scientific-card'>
+                <div class='math-title'>POISSON WIN %</div>
+                <div class='math-val' style='color:#00ff7f'>{p_w*100:.1f}% Local</div>
+                <div class='math-desc'>Visita: {p_l*100:.1f}% | Empate: {p_d*100:.1f}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with c_kelly:
+            # Kelly Calculator
+            prob_fav = max(p_w, p_l)
+            st.markdown(f"""
+            <div class='scientific-card' style='border-left-color:#d4af37'>
+                <div class='math-title'>CALCULADORA KELLY</div>
+                <div class='math-val'>{prob_fav*100:.1f}% Confianza</div>
+                <div class='math-desc'>Si la cuota es > {1/prob_fav:.2f}, hay valor.</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+    else:
+        st.error(f"No se encontraron datos históricos para {h_name} vs {a_name}.")
+        st.info("Intenta seleccionarlos manualmente si los nombres no coinciden.")
